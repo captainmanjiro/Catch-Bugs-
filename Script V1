@@ -1,0 +1,983 @@
+-- Fisch Hub | Fluent UI | dc: znawz
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+local Player = Players.LocalPlayer
+local Events = ReplicatedStorage:WaitForChild("Events")
+local CatchEvent = Events:WaitForChild("CatchEvent")
+local BuyPotionFunc = ReplicatedStorage:WaitForChild("Functions"):WaitForChild("BuyPotionWithCoins")
+local BuyNetFunc = ReplicatedStorage:WaitForChild("Functions"):WaitForChild("BuyNetWithCoins")
+local BuyBaitFunc = ReplicatedStorage:WaitForChild("Functions"):WaitForChild("BuyBaitFunction")
+
+-- Global State
+getgenv().AuraCatch = false
+getgenv().AutoCast = false
+getgenv().HideUI = false
+getgenv().FishCount = 0
+getgenv().CatchDelay = 0
+getgenv().SpeedValue = 16
+getgenv().AutoBuyExpPotion = false
+getgenv().AutoBuySpeedPotion = false
+getgenv().AutoBuyLuckPotion = false
+getgenv().PotionBuyInterval = 30
+getgenv().AutoSellThis = false
+getgenv().AutoSellAll = false
+getgenv().SellInterval = 10
+getgenv().NPCespOn = false
+getgenv().SelectedNPC = ""
+getgenv().AutoBuyNet = false
+getgenv().SelectedNet = "FrostyNet"
+getgenv().NetBuyInterval = 30
+getgenv().AutoBuyBait = false
+getgenv().SelectedBait = "Lightning"
+getgenv().BaitBuyInterval = 30
+getgenv()._SellTimer = 0
+
+-- ============================================================
+--  BAIT DATA
+-- ============================================================
+local BaitList = {
+    { id = "BasicLight",  display = "Basic Light Lure",   desc = "Starter lure"           },
+    { id = "Lucky",       display = "Lucky Lure",         desc = "Increases luck"          },
+    { id = "Fire",        display = "Fire Lure",          desc = "Fire-type attractor"     },
+    { id = "Lightning",   display = "Lightning Lure",     desc = "Lightning attractor"     },
+    { id = "Quasar",      display = "Quasar Lure",        desc = "Rare cosmic lure"        },
+    { id = "Radioactive", display = "Radioactive Lure",   desc = "Radioactive attractor"   },
+    { id = "Diamond",     display = "Diamond Lure",       desc = "Premium diamond lure"    },
+    { id = "DarkMatter",  display = "Dark Matter Lure",   desc = "Ultimate dark lure"      },
+}
+
+local BaitDropdownList = {}
+local BaitIDMap = {}
+for _, bait in ipairs(BaitList) do
+    local entry = bait.display .. " — " .. bait.desc
+    table.insert(BaitDropdownList, entry)
+    BaitIDMap[entry] = bait.id
+end
+
+-- ============================================================
+--  NET DATA
+-- ============================================================
+local NetList = {
+    { id = "FlimsyNet",     display = "Flimsy Net",      price = "Free",         luck = "-20%",    stage = 0  },
+    { id = "BasicNet",      display = "Basic Net",       price = "10 coins",     luck = "+0%",     stage = 1  },
+    { id = "SteelNet",      display = "Steel Net",       price = "600 coins",    luck = "+50%",    stage = 2  },
+    { id = "CarbonNet",     display = "Carbon Net",      price = "1,800 coins",  luck = "+120%",   stage = 3  },
+    { id = "LuckyNet",      display = "Lucky Net",       price = "5,200 coins",  luck = "+250%",   stage = 4  },
+    { id = "SpiderNet",     display = "Spider Net",      price = "Event",        luck = "+185%",   stage = 3  },
+    { id = "FastNet",       display = "Fast Net",        price = "8,000 coins",  luck = "+120%",   stage = 2  },
+    { id = "NatureNet",     display = "Nature Net",      price = "16,000 coins", luck = "+500%",   stage = 5  },
+    { id = "ToadstoolNet",  display = "Toadstool Net",   price = "28,000 coins", luck = "+1,100%", stage = 6  },
+    { id = "RoyalNet",      display = "Royal Net",       price = "76,000 coins", luck = "+1,970%", stage = 7  },
+    { id = "DemonNet",      display = "Demon Net",       price = "180,000 coins",luck = "+3,333%", stage = 8  },
+    { id = "NuclearNet",    display = "Nuclear Net",     price = "330,000 coins",luck = "+4,999%", stage = 9  },
+    { id = "FrostyNet",     display = "Frosty Net",      price = "550,000 coins",luck = "+6,200%", stage = 10 },
+    { id = "LightningNet",  display = "Lightning Net",   price = "760,000 coins",luck = "+7,500%", stage = 11 },
+    { id = "HellfireNet",   display = "Hellfire Net",    price = "1.2M coins",   luck = "+9,999%", stage = 12 },
+    { id = "LunarNet",      display = "Lunar Net",       price = "2M coins",     luck = "+12,300%",stage = 13 },
+    { id = "BlackHoleNet",  display = "Black Hole Net",  price = "6.5M coins",   luck = "+19,999%",stage = 14 },
+    { id = "DarkMatterNet", display = "Dark Matter Net", price = "15M coins",    luck = "+29,999%",stage = 15 },
+}
+
+local NetDropdownList = {}
+local NetIDMap = {}
+for _, net in ipairs(NetList) do
+    local entry = string.format("[S%d] %s | %s | %s", net.stage, net.display, net.price, net.luck)
+    table.insert(NetDropdownList, entry)
+    NetIDMap[entry] = net.id
+end
+
+-- ============================================================
+--  NPC DATA
+-- ============================================================
+local NPCInfo = {
+    ["Clarence"]         = { display = "Clarence",         purpose = "Bug Seller" },
+    ["Alden"]            = { display = "Alden",            purpose = "Bug Seller" },
+    ["Ken"]              = { display = "Ken",              purpose = "Bug Seller (Tutorial)" },
+    ["ForestResearcher"] = { display = "Forest Researcher",purpose = "Quest: Forest Bugs" },
+    ["CaveResearcher"]   = { display = "Cave Researcher",  purpose = "Quest: Glowworm Sample" },
+    ["OldMan"]           = { display = "Old Man",          purpose = "Quest: Moon Hollow" },
+    ["HollowKeeper"]     = { display = "Hollow Keeper",    purpose = "Moon Hollow Gatekeeper" },
+    ["Axel"]             = { display = "Axel",             purpose = "Net Shop (Forest)" },
+    ["Zak"]              = { display = "Zak",              purpose = "Net Shop (Caves)" },
+    ["Gary"]             = { display = "Gary",             purpose = "Net Shop (Grasslands)" },
+    ["Luna"]             = { display = "Luna",             purpose = "Net Shop (Moon Hollow)" },
+    ["Alex"]             = { display = "Alex",             purpose = "Quest: Ant Farm" },
+    ["Steve"]            = { display = "Steve",            purpose = "Bait Shop (Forest)" },
+    ["Bob"]              = { display = "Bob",              purpose = "Bait Shop (Grasslands)" },
+    ["Felix"]            = { display = "Felix",            purpose = "Bait Shop (Caves)" },
+    ["Alchemist"]        = { display = "Alchemist",        purpose = "Potion Shop" },
+    ["RewardsGuy"]       = { display = "Rewards",          purpose = "Free Daily Rewards" },
+    ["Danny"]            = { display = "Danny",            purpose = "NPC (Cave Visitor)" },
+    ["Timur"]            = { display = "Timur",            purpose = "NPC (Cave Entrance)" },
+    ["Mason"]            = { display = "Mason",            purpose = "NPC (Moon Hollow)" },
+    ["Kenny"]            = { display = "Kenny",            purpose = "NPC (Cave Rival)" },
+    ["Cliff"]            = { display = "Cliff",            purpose = "NPC (Collapse Miner)" },
+    ["Robin"]            = { display = "Robin",            purpose = "NPC (Forest Logger)" },
+    ["Simon"]            = { display = "Simon",            purpose = "Quest: Dragon Millipede" },
+    ["Beekeeper"]        = { display = "Beekeeper",        purpose = "Quest: Giant Hornet" },
+    ["Jon"]              = { display = "Jon",              purpose = "NPC (Forest Camp)" },
+    ["Sam"]              = { display = "Sam",              purpose = "Quest NPC" },
+}
+
+local NPCDropdownList = {}
+local NPCModelMap = {}
+for modelName, info in pairs(NPCInfo) do
+    local entry = info.display .. " | " .. info.purpose
+    table.insert(NPCDropdownList, entry)
+    NPCModelMap[entry] = modelName
+end
+table.sort(NPCDropdownList)
+
+-- ============================================================
+--  ESP SYSTEM
+-- ============================================================
+local ESPData = {}
+
+local function getPlayerHRP()
+    local char = Player.Character
+    if char then return char:FindFirstChild("HumanoidRootPart") end
+end
+
+local function createESPBillboard(model, modelName)
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if ESPData[modelName] then return end
+    local info = NPCInfo[modelName] or { display = modelName, purpose = "Unknown" }
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "FischHubNPCESP"
+    bb.Size = UDim2.new(0, 220, 0, 70)
+    bb.StudsOffset = Vector3.new(0, 4, 0)
+    bb.AlwaysOnTop = true
+    bb.Adornee = hrp
+    bb.Parent = CoreGui
+    local frame = Instance.new("Frame")
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 0.4
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.Parent = bb
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+    local function makeLabel(text, color, size, pos)
+        local lbl = Instance.new("TextLabel")
+        lbl.Text = text
+        lbl.TextColor3 = color
+        lbl.TextStrokeTransparency = 0
+        lbl.BackgroundTransparency = 1
+        lbl.Size = size
+        lbl.Position = pos
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = frame
+        return lbl
+    end
+    makeLabel("👤 " .. info.display, Color3.fromRGB(0,255,128), UDim2.new(1,-6,0.38,0), UDim2.new(0,3,0,2))
+    makeLabel("📋 " .. info.purpose, Color3.fromRGB(255,220,50), UDim2.new(1,-6,0.3,0), UDim2.new(0,3,0.36,0))
+    local distLbl = makeLabel("📍 - studs", Color3.fromRGB(180,180,255), UDim2.new(1,-6,0.3,0), UDim2.new(0,3,0.68,0))
+    distLbl.Name = "DistLabel"
+    ESPData[modelName] = { billboard = bb, distLabel = distLbl, hrp = hrp }
+end
+
+local function clearAllESP()
+    for _, data in pairs(ESPData) do data.billboard:Destroy() end
+    ESPData = {}
+end
+
+local function setupAllESP()
+    local npcsFolder = workspace:FindFirstChild("NPCS")
+    if not npcsFolder then return end
+    for _, model in pairs(npcsFolder:GetChildren()) do
+        if model:IsA("Model") then createESPBillboard(model, model.Name) end
+    end
+    npcsFolder.ChildAdded:Connect(function(model)
+        if model:IsA("Model") and getgenv().NPCespOn then
+            task.wait(0.5)
+            createESPBillboard(model, model.Name)
+        end
+    end)
+    npcsFolder.ChildRemoved:Connect(function(model)
+        if model:IsA("Model") then
+            if ESPData[model.Name] then
+                ESPData[model.Name].billboard:Destroy()
+                ESPData[model.Name] = nil
+            end
+        end
+    end)
+end
+
+-- ============================================================
+--  TELEPORT NPC
+-- ============================================================
+local function teleportToNPC(modelName)
+    local npcsFolder = workspace:FindFirstChild("NPCS")
+    if not npcsFolder then
+        Fluent:Notify({ Title = "Teleport", Content = "NPCS folder not found!", Duration = 3 })
+        return
+    end
+    local model = npcsFolder:FindFirstChild(modelName)
+    if model then
+        local hrp = model:FindFirstChild("HumanoidRootPart")
+        if hrp and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            Player.Character.HumanoidRootPart.CFrame = hrp.CFrame * CFrame.new(0, 3, 4)
+            local info = NPCInfo[modelName]
+            Fluent:Notify({ Title = "Teleported!", Content = "Went to " .. (info and info.display or modelName), Duration = 2 })
+        end
+    else
+        Fluent:Notify({ Title = "Teleport", Content = modelName .. " not found!", Duration = 3 })
+    end
+end
+
+-- ============================================================
+--  BUY FUNCTIONS
+-- ============================================================
+local function buyNet(netID)
+    local ok, result = pcall(function() return BuyNetFunc:InvokeServer(netID) end)
+    if ok then
+        if type(result) == "table" then return result.success, result.message end
+        return result == true, "Failed"
+    end
+    return false, tostring(result)
+end
+
+local function buyBait(baitID)
+    local ok, result = pcall(function() return BuyBaitFunc:InvokeServer(baitID) end)
+    if ok then
+        if type(result) == "table" then return result.success ~= false, result.message end
+        return true, nil
+    end
+    return false, tostring(result)
+end
+
+local function buyPotion(potionType)
+    local ok, err = pcall(function() BuyPotionFunc:InvokeServer(potionType) end)
+    if not ok then warn("[Fisch Hub] BuyPotion error: " .. tostring(err)) end
+end
+
+-- ============================================================
+--  SELL FUNCTIONS (FIXED)
+-- ============================================================
+local function sellThis()
+    local ok, err = pcall(function()
+        local func = ReplicatedStorage:WaitForChild("Functions"):WaitForChild("SellThisFunction")
+        func:InvokeServer("eed6a0ff-ecae-40e8-be10-7b2c30288d33")
+    end)
+    if not ok then warn("[Fisch Hub] SellThis error: " .. tostring(err)) end
+end
+
+local function sellAll()
+    local ok, err = pcall(function()
+        local func = ReplicatedStorage:WaitForChild("Functions"):WaitForChild("SellAllFunction")
+        func:InvokeServer()
+    end)
+    if not ok then warn("[Fisch Hub] SellAll error: " .. tostring(err)) end
+end
+
+-- ============================================================
+--  MISC FUNCTIONS
+-- ============================================================
+local function hideGameUI(state)
+    local ui = Player.PlayerGui:FindFirstChild("UI")
+    if not ui then return end
+    for _, name in pairs({"CastingFrame","AutoCatchBar","SliderMinigame","GroundReelFrame","FlyingReelFrame","ScreenClick"}) do
+        local frame = ui:FindFirstChild(name)
+        if frame then
+            frame.Visible = not state
+            if state and not frame:GetAttribute("HiddenByExploit") then
+                frame:SetAttribute("HiddenByExploit", true)
+                frame:GetPropertyChangedSignal("Visible"):Connect(function()
+                    if getgenv().HideUI then frame.Visible = false end
+                end)
+            end
+        end
+    end
+end
+
+local function setWalkSpeed(speed)
+    local char = Player.Character
+    if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = speed end
+end
+
+local function setJumpPower(power)
+    local char = Player.Character
+    if char and char:FindFirstChild("Humanoid") then char.Humanoid.JumpPower = power end
+end
+
+-- ============================================================
+--  HOOK
+-- ============================================================
+local oldNC
+oldNC = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
+    if self == CatchEvent and method == "FireServer" then
+        if args[1] == "CancelCatchV2" then return nil end
+        if args[1] == "CatchingV2" then
+            args[2] = 2
+            return oldNC(self, unpack(args))
+        end
+    end
+    return oldNC(self, ...)
+end)
+
+-- ============================================================
+--  CATCH EVENT
+-- ============================================================
+CatchEvent.OnClientEvent:Connect(function(event, data)
+    if event == "BiteNotification" and getgenv().AuraCatch then
+        local session = data and data.session
+        if not session then return end
+        task.wait(getgenv().CatchDelay)
+        CatchEvent:FireServer("ReeledV2", {
+            sid = session.sid, nonce = session.nonce, seq = 1,
+            groundDurationMs = 0, swatCount = 1, reason = "track"
+        })
+        CatchEvent:FireServer("Stage2ResultV2", {
+            sid = session.sid, nonce = session.nonce, seq = 2,
+            localSuccess = true, durationMs = 0, insideMs = 0,
+            outsideMs = 0, holdTransitions = 0, holdTrace = {}
+        })
+        getgenv().FishCount += 1
+        task.defer(function()
+            setWalkSpeed(getgenv().SpeedValue)
+            Events.CancelCatchBindable:Fire()
+        end)
+    end
+end)
+
+-- ============================================================
+--  WINDOW
+-- ============================================================
+local Window = Fluent:CreateWindow({
+    Title = "🐛Catch Bugs!",
+    SubTitle = "V.1",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightControl
+})
+
+local Tabs = {
+    Main     = Window:AddTab({ Title = "Main",     Icon = "home" }),
+    Nets     = Window:AddTab({ Title = "Nets",     Icon = "shield" }),
+    Bait     = Window:AddTab({ Title = "Bait",     Icon = "target" }),
+    NPC      = Window:AddTab({ Title = "NPC",      Icon = "users" }),
+    Player   = Window:AddTab({ Title = "Player",   Icon = "person-standing" }),
+    Stats    = Window:AddTab({ Title = "Stats",    Icon = "bar-chart-2" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+    Credits  = Window:AddTab({ Title = "Credits",  Icon = "heart"        })
+}
+
+-- ============================================================
+--  MAIN TAB
+-- ============================================================
+Tabs.Main:AddSection("Auto Catch")
+
+Tabs.Main:AddParagraph({
+    Title = "Catch Info",
+    Content = "First - Click Hide Game Ui\nSecond - Click Catch & Cast And Click Once\nThird - Dont TOggle Off Catch And Cast Just Hide Net Item"
+})
+
+Tabs.Main:AddToggle("AuraCatch", {
+    Title = "Auto Instant Catch",
+    Default = false,
+    Callback = function(v)
+        getgenv().AuraCatch = v
+        Fluent:Notify({ Title = "Auto Catch", Content = v and "Enabled" or "Disabled", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddToggle("AutoCast", {
+    Title = "Auto InstantCast",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoCast = v
+        Fluent:Notify({ Title = "Auto Cast", Content = v and "Enabled" or "Disabled", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddSlider("CatchDelay", {
+    Title = "Catch Delay (seconds)",
+    Default = 0.1, Min = 0.1, Max = 3, Rounding = 1,
+    Callback = function(v) getgenv().CatchDelay = v end
+})
+
+Tabs.Main:AddToggle("HideUI", {
+    Title = "Hide Game UI",
+    Default = false,
+    Callback = function(v)
+        getgenv().HideUI = v
+        hideGameUI(v)
+    end
+})
+
+Tabs.Main:AddSection("Auto Sell")
+
+Tabs.Main:AddParagraph({
+    Title = "Sell Info",
+    Content = "Sell This - Sells Selected Bug Slot\nSell All = clears full inventory"
+})
+
+Tabs.Main:AddSlider("SellInterval", {
+    Title = "Sell Interval (seconds)",
+    Default = 10, Min = 3, Max = 120, Rounding = 0,
+    Callback = function(v) getgenv().SellInterval = v end
+})
+
+Tabs.Main:AddToggle("AutoSellThis", {
+    Title = "Auto Sell This",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoSellThis = v
+        Fluent:Notify({ Title = "Auto Sell This", Content = v and "Enabled" or "Disabled", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddToggle("AutoSellAll", {
+    Title = "Auto Sell All",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoSellAll = v
+        Fluent:Notify({ Title = "Auto Sell All", Content = v and "Enabled" or "Disabled", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddButton({
+    Title = "Sell This Now",
+    Callback = function()
+        sellThis()
+        Fluent:Notify({ Title = "Sold!", Content = "Selected bug sold.", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddButton({
+    Title = "Sell All Now",
+    Callback = function()
+        sellAll()
+        Fluent:Notify({ Title = "Sold!", Content = "Full inventory sold.", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddSection("Auto Buy Potions")
+
+Tabs.Main:AddSlider("PotionInterval", {
+    Title = "Buy Interval (seconds)",
+    Default = 30, Min = 5, Max = 120, Rounding = 0,
+    Callback = function(v) getgenv().PotionBuyInterval = v end
+})
+
+Tabs.Main:AddToggle("AutoBuyExp", {
+    Title = "Auto Buy EXP Potion",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoBuyExpPotion = v
+        Fluent:Notify({ Title = "EXP Potion", Content = v and "On" or "Off", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddToggle("AutoBuySpeed", {
+    Title = "Auto Buy Speed Potion",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoBuySpeedPotion = v
+        Fluent:Notify({ Title = "Speed Potion", Content = v and "On" or "Off", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddToggle("AutoBuyLuck", {
+    Title = "Auto Buy Luck Potion",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoBuyLuckPotion = v
+        Fluent:Notify({ Title = "Luck Potion", Content = v and "On" or "Off", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddSection("Misc")
+
+Tabs.Main:AddButton({
+    Title = "Reset Fish Count",
+    Callback = function()
+        getgenv().FishCount = 0
+        Fluent:Notify({ Title = "Stats", Content = "Fish count reset!", Duration = 2 })
+    end
+})
+
+-- ============================================================
+--  NETS TAB
+-- ============================================================
+Tabs.Nets:AddSection("Select Net")
+
+Tabs.Nets:AddParagraph({
+    Title = "Net Info",
+    Content = "[S#] = Type\nSelect from dropdown then use Buy Now or Auto Buy."
+})
+
+local selectedNetEntry = NetDropdownList[13]
+getgenv().SelectedNet = NetIDMap[selectedNetEntry] or "FrostyNet"
+
+Tabs.Nets:AddDropdown("NetSelect", {
+    Title = "Select Net to Buy",
+    Description = "Choose the net to buy or auto-buy.",
+    Values = NetDropdownList,
+    Default = selectedNetEntry,
+    Callback = function(v)
+        selectedNetEntry = v
+        getgenv().SelectedNet = NetIDMap[v] or "FrostyNet"
+        Fluent:Notify({ Title = "Net Selected", Content = NetIDMap[v] or v, Duration = 2 })
+    end
+})
+
+Tabs.Nets:AddSection("Buy Controls")
+
+Tabs.Nets:AddButton({
+    Title = "Buy Net Now",
+    Callback = function()
+        local netID = getgenv().SelectedNet
+        if not netID or netID == "" then
+            Fluent:Notify({ Title = "Error", Content = "No net selected!", Duration = 2 })
+            return
+        end
+        local success, msg = buyNet(netID)
+        if success then
+            Fluent:Notify({ Title = "Net Purchased!", Content = "Bought: " .. netID, Duration = 3 })
+        else
+            Fluent:Notify({ Title = "Purchase Failed", Content = tostring(msg) or "Not enough coins!", Duration = 3 })
+        end
+    end
+})
+
+Tabs.Nets:AddSlider("NetBuyInterval", {
+    Title = "Auto Buy Interval (seconds)",
+    Default = 30, Min = 5, Max = 120, Rounding = 0,
+    Callback = function(v) getgenv().NetBuyInterval = v end
+})
+
+Tabs.Nets:AddToggle("AutoBuyNetToggle", {
+    Title = "Auto Buy Net",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoBuyNet = v
+        Fluent:Notify({
+            Title = "Auto Buy Net",
+            Content = v and ("Enabled — " .. getgenv().SelectedNet) or "Disabled",
+            Duration = 2
+        })
+    end
+})
+
+Tabs.Nets:AddSection("Quick Buy — All Nets")
+
+for _, net in ipairs(NetList) do
+    Tabs.Nets:AddButton({
+        Title = string.format("[S%d] %s — %s", net.stage, net.display, net.price),
+        Description = "Luck: " .. net.luck,
+        Callback = function()
+            local success, msg = buyNet(net.id)
+            if success then
+                Fluent:Notify({ Title = "Bought!", Content = net.display .. " purchased!", Duration = 3 })
+            else
+                Fluent:Notify({ Title = "Failed", Content = tostring(msg) or "Not enough coins!", Duration = 3 })
+            end
+        end
+    })
+end
+
+-- ============================================================
+--  BAIT TAB
+-- ============================================================
+Tabs.Bait:AddSection("Bait Info")
+
+Tabs.Bait:AddParagraph({
+    Title = "About Baits / Lures",
+    Content = "Lures are bought from Shop\nSelect a lure then use Buy Now or enable Auto Buy."
+})
+
+Tabs.Bait:AddSection("Select Bait")
+
+local selectedBaitEntry = BaitDropdownList[4]
+getgenv().SelectedBait = BaitIDMap[selectedBaitEntry] or "Lightning"
+
+Tabs.Bait:AddDropdown("BaitSelect", {
+    Title = "Select Bait / Lure",
+    Description = "Choose which lure to buy or auto-buy.",
+    Values = BaitDropdownList,
+    Default = selectedBaitEntry,
+    Callback = function(v)
+        selectedBaitEntry = v
+        getgenv().SelectedBait = BaitIDMap[v] or "Lightning"
+        Fluent:Notify({
+            Title = "Bait Selected",
+            Content = "Selected: " .. (BaitIDMap[v] or v),
+            Duration = 2
+        })
+    end
+})
+
+Tabs.Bait:AddSection("Buy Controls")
+
+Tabs.Bait:AddButton({
+    Title = "Buy Bait Now",
+    Callback = function()
+        local baitID = getgenv().SelectedBait
+        if not baitID or baitID == "" then
+            Fluent:Notify({ Title = "Error", Content = "No bait selected!", Duration = 2 })
+            return
+        end
+        local success, msg = buyBait(baitID)
+        if success then
+            Fluent:Notify({ Title = "Bait Purchased!", Content = "Bought: " .. baitID .. " Lure", Duration = 3 })
+        else
+            Fluent:Notify({ Title = "Purchase Failed", Content = tostring(msg) or "Not enough coins!", Duration = 3 })
+        end
+    end
+})
+
+Tabs.Bait:AddSlider("BaitBuyInterval", {
+    Title = "Auto Buy Interval (seconds)",
+    Description = "How often to auto-buy the selected lure.",
+    Default = 30, Min = 5, Max = 120, Rounding = 0,
+    Callback = function(v) getgenv().BaitBuyInterval = v end
+})
+
+Tabs.Bait:AddToggle("AutoBuyBaitToggle", {
+    Title = "Auto Buy Bait",
+    Default = false,
+    Callback = function(v)
+        getgenv().AutoBuyBait = v
+        Fluent:Notify({
+            Title = "Auto Buy Bait",
+            Content = v and ("Enabled — " .. getgenv().SelectedBait) or "Disabled",
+            Duration = 2
+        })
+    end
+})
+
+Tabs.Bait:AddSection("Quick Buy — All Lures")
+
+for _, bait in ipairs(BaitList) do
+    Tabs.Bait:AddButton({
+        Title = bait.display,
+        Description = bait.desc .. " | ID: " .. bait.id,
+        Callback = function()
+            local success, msg = buyBait(bait.id)
+            if success then
+                Fluent:Notify({ Title = "Bought!", Content = bait.display .. " purchased!", Duration = 3 })
+            else
+                Fluent:Notify({ Title = "Failed", Content = tostring(msg) or "Not enough coins!", Duration = 3 })
+            end
+        end
+    })
+end
+
+-- ============================================================
+--  NPC TAB
+-- ============================================================
+Tabs.NPC:AddSection("NPC ESP")
+
+Tabs.NPC:AddToggle("NPCEspToggle", {
+    Title = "NPC ESP",
+    Description = "Shows name, purpose, and live distance above every NPC.",
+    Default = false,
+    Callback = function(v)
+        getgenv().NPCespOn = v
+        if v then setupAllESP() else clearAllESP() end
+        Fluent:Notify({ Title = "NPC ESP", Content = v and "Enabled" or "Disabled", Duration = 2 })
+    end
+})
+
+
+Tabs.NPC:AddSection("NPC Teleport — Dropdown")
+
+local selectedNPCEntry = NPCDropdownList[1] or ""
+getgenv().SelectedNPC = NPCModelMap[selectedNPCEntry] or ""
+
+Tabs.NPC:AddDropdown("NPCSelect", {
+    Title = "Select NPC",
+    Values = NPCDropdownList,
+    Default = NPCDropdownList[1],
+    Callback = function(v)
+        selectedNPCEntry = v
+        getgenv().SelectedNPC = NPCModelMap[v] or ""
+    end
+})
+
+Tabs.NPC:AddButton({
+    Title = "Teleport to Selected NPC",
+    Callback = function()
+        if getgenv().SelectedNPC ~= "" then
+            teleportToNPC(getgenv().SelectedNPC)
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "No NPC selected!", Duration = 2 })
+        end
+    end
+})
+
+Tabs.NPC:AddSection("Quick Teleport — Sellers")
+for _, s in pairs({
+    { label = "Clarence (Bug Seller)", model = "Clarence" },
+    { label = "Alden (Bug Seller)",    model = "Alden" },
+    { label = "Alchemist (Potions)",   model = "Alchemist" },
+    { label = "Rewards NPC",           model = "RewardsGuy" },
+}) do
+    Tabs.NPC:AddButton({ Title = s.label, Callback = function() teleportToNPC(s.model) end })
+end
+
+Tabs.NPC:AddSection("Quick Teleport — Shops")
+for _, s in pairs({
+    { label = "Axel — Forest Nets",      model = "Axel" },
+    { label = "Zak — Cave Nets",         model = "Zak" },
+    { label = "Gary — Grassland Nets",   model = "Gary" },
+    { label = "Luna — Moon Hollow Nets", model = "Luna" },
+    { label = "Steve — Forest Bait",     model = "Steve" },
+    { label = "Bob — Grassland Bait",    model = "Bob" },
+    { label = "Felix — Cave Bait",       model = "Felix" },
+}) do
+    Tabs.NPC:AddButton({ Title = s.label, Callback = function() teleportToNPC(s.model) end })
+end
+
+Tabs.NPC:AddSection("Quick Teleport — Quest NPCs")
+for _, s in pairs({
+    { label = "Forest Researcher",  model = "ForestResearcher" },
+    { label = "Cave Researcher",    model = "CaveResearcher" },
+    { label = "Old Man",            model = "OldMan" },
+    { label = "Hollow Keeper",      model = "HollowKeeper" },
+    { label = "Alex (Ant Farm)",    model = "Alex" },
+    { label = "Simon (Millipede)",  model = "Simon" },
+    { label = "Beekeeper (Hornet)", model = "Beekeeper" },
+}) do
+    Tabs.NPC:AddButton({ Title = s.label, Callback = function() teleportToNPC(s.model) end })
+end
+
+-- ============================================================
+--  PLAYER TAB
+-- ============================================================
+Tabs.Player:AddSection("Movement")
+
+Tabs.Player:AddSlider("WalkSpeed", {
+    Title = "Walk Speed", Default = 16, Min = 16, Max = 250, Rounding = 0,
+    Callback = function(v) getgenv().SpeedValue = v setWalkSpeed(v) end
+})
+
+Tabs.Player:AddSlider("JumpPower", {
+    Title = "Jump Power", Default = 50, Min = 50, Max = 300, Rounding = 0,
+    Callback = function(v) setJumpPower(v) end
+})
+
+Tabs.Player:AddToggle("NoClip", {
+    Title = "Noclip", Default = false,
+    Callback = function(v) getgenv().NoClip = v end
+})
+
+Tabs.Player:AddSection("Teleport")
+
+Tabs.Player:AddButton({
+    Title = "Teleport to Spawn",
+    Callback = function()
+        local spawn = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChildOfClass("SpawnLocation")
+        if spawn and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            Player.Character.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0, 5, 0)
+        else
+            Fluent:Notify({ Title = "Teleport", Content = "Spawn not found!", Duration = 2 })
+        end
+    end
+})
+
+-- ============================================================
+--  STATS TAB
+-- ============================================================
+Tabs.Stats:AddSection("Session Info")
+
+Tabs.Stats:AddButton({
+    Title = "Check Fish Caught",
+    Callback = function()
+        Fluent:Notify({
+            Title = "Fish Caught",
+            Content = "You caught " .. tostring(getgenv().FishCount) .. " fish this session.",
+            Duration = 4
+        })
+    end
+})
+
+-- ============================================================
+--                  TAB: CREDITS
+-- ============================================================
+Tabs.Credits:AddSection("Creator")
+ 
+Tabs.Credits:AddParagraph({
+    Title   = "Credits: Captain Manjiro",
+    Content = "Thanks for using this script!\nClick the buttons below to copy the YouTube or Discord link.",
+})
+ 
+Tabs.Credits:AddButton({
+    Title       = "▶  YouTube — Captain Manjiro",
+    Description = "Copies the YouTube channel link to your clipboard",
+    Callback    = function()
+        setclipboard("https://youtube.com/@captainmanjiro?si=z7YHBBTM-AguP1pm")
+        Fluent:Notify({
+            Title   = "Copied!",
+            Content = "YouTube link copied to clipboard.",
+            Duration = 4,
+        })
+    end,
+})
+ 
+Tabs.Credits:AddButton({
+    Title       = "💬  Discord Server",
+    Description = "Copies the Discord invite link to your clipboard",
+    Callback    = function()
+        setclipboard("https://discord.gg/WS9vzUWM4R")
+        Fluent:Notify({
+            Title   = "Copied!",
+            Content = "Discord link copied to clipboard.",
+            Duration = 4,
+        })
+    end,
+})
+
+-- ============================================================
+--  SETTINGS TAB
+-- ============================================================
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+-- ============================================================
+--  BACKGROUND LOOPS
+-- ============================================================
+
+-- Auto Cast
+task.spawn(function()
+    while task.wait(0) do
+        if getgenv().AutoCast then CatchEvent:FireServer("CatchingV2", 2) end
+        if Fluent.Unloaded then break end
+    end
+end)
+
+-- Auto Sell (FIXED — 1s tick counter so interval slider works live)
+task.spawn(function()
+    while task.wait(1) do
+        if Fluent.Unloaded then break end
+        if not (getgenv().AutoSellThis or getgenv().AutoSellAll) then continue end
+        getgenv()._SellTimer = (getgenv()._SellTimer or 0) + 1
+        if getgenv()._SellTimer >= (getgenv().SellInterval or 10) then
+            getgenv()._SellTimer = 0
+            if getgenv().AutoSellThis then
+                sellThis()
+                Fluent:Notify({ Title = "Auto Sell", Content = "Sold selected bug!", Duration = 2 })
+            end
+            if getgenv().AutoSellAll then
+                sellAll()
+                Fluent:Notify({ Title = "Auto Sell", Content = "Sold all inventory!", Duration = 2 })
+            end
+        end
+    end
+end)
+
+-- Auto Buy Potions
+task.spawn(function()
+    while task.wait(getgenv().PotionBuyInterval or 30) do
+        if Fluent.Unloaded then break end
+        if getgenv().AutoBuyExpPotion then
+            buyPotion("Exp")
+            Fluent:Notify({ Title = "Potion", Content = "Bought EXP Potion!", Duration = 2 })
+        end
+        if getgenv().AutoBuySpeedPotion then
+            buyPotion("Speed")
+            Fluent:Notify({ Title = "Potion", Content = "Bought Speed Potion!", Duration = 2 })
+        end
+        if getgenv().AutoBuyLuckPotion then
+            buyPotion("Luck")
+            Fluent:Notify({ Title = "Potion", Content = "Bought Luck Potion!", Duration = 2 })
+        end
+    end
+end)
+
+-- Auto Buy Net
+task.spawn(function()
+    while true do
+        task.wait(getgenv().NetBuyInterval or 30)
+        if Fluent.Unloaded then break end
+        if getgenv().AutoBuyNet then
+            local netID = getgenv().SelectedNet
+            if netID and netID ~= "" then
+                local success, msg = buyNet(netID)
+                if success then
+                    Fluent:Notify({ Title = "Auto Net", Content = "Bought " .. netID .. "!", Duration = 3 })
+                else
+                    Fluent:Notify({ Title = "Auto Net Failed", Content = tostring(msg) or "Not enough coins.", Duration = 3 })
+                end
+            end
+        end
+    end
+end)
+
+-- Auto Buy Bait
+task.spawn(function()
+    while true do
+        task.wait(getgenv().BaitBuyInterval or 30)
+        if Fluent.Unloaded then break end
+        if getgenv().AutoBuyBait then
+            local baitID = getgenv().SelectedBait
+            if baitID and baitID ~= "" then
+                local success, msg = buyBait(baitID)
+                if success then
+                    Fluent:Notify({ Title = "Auto Bait", Content = "Bought " .. baitID .. " Lure!", Duration = 3 })
+                else
+                    Fluent:Notify({ Title = "Auto Bait Failed", Content = tostring(msg) or "Not enough coins.", Duration = 3 })
+                end
+            end
+        end
+    end
+end)
+
+-- NPC ESP Distance Updater
+task.spawn(function()
+    while task.wait(0.15) do
+        if Fluent.Unloaded then break end
+        local hrp = getPlayerHRP()
+        if not hrp then continue end
+        for _, data in pairs(ESPData) do
+            if data.hrp and data.hrp.Parent and data.distLabel and data.distLabel.Parent then
+                local dist = math.floor((hrp.Position - data.hrp.Position).Magnitude)
+                data.distLabel.Text = "📍 " .. dist .. " studs"
+            end
+        end
+    end
+end)
+
+-- Noclip
+RunService.Stepped:Connect(function()
+    if getgenv().NoClip and Player.Character then
+        for _, part in pairs(Player.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+end)
+
+-- Respawn speed restore
+Player.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid")
+    setWalkSpeed(getgenv().SpeedValue)
+end)
+
+-- ============================================================
+Window:SelectTab(1)
+SaveManager:LoadAutoloadConfig()
+
+Fluent:Notify({
+    Title = "🐛Catch Bugs!",
+    Content = "Thank You For Using My Script🥰",
+    Duration = 5
+})
+
+-- CATCH A BUGS FINAL AUTO CATCH + SELL + POTIONS + NPC BUY NET AND BAIT
