@@ -800,7 +800,7 @@ Tabs.Stats:AddButton({
     Title = "Check Bugs Caught",
     Callback = function()
         Fluent:Notify({
-            Title = "Fish Caught",
+            Title = "Bugs Caught",
             Content = "You caught " .. tostring(getgenv().FishCount) .. " fish this session.",
             Duration = 4
         })
