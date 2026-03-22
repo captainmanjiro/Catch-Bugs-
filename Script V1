@@ -797,7 +797,7 @@ Tabs.Player:AddButton({
 Tabs.Stats:AddSection("Session Info")
 
 Tabs.Stats:AddButton({
-    Title = "Check Fish Caught",
+    Title = "Check Bugs Caught",
     Callback = function()
         Fluent:Notify({
             Title = "Fish Caught",
